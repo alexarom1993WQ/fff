@@ -356,31 +356,12 @@ export const addSessionPayment = async (): Promise<{
       receiptUrl: paymentData.receipt_url,
     };
 
-    // Add the unknown person to today's attendance
-    const { data: attendanceData, error: attendanceError } = await supabase
-      .from("attendance")
-      .insert([
-        {
-          user_id: userId,
-          member_id: null, // Use null for non-registered members
-          member_name: memberName,
-          member_image: null,
-          attendance_date: today,
-          attendance_time: now,
-          session_type: "single_session",
-          notes: `حصة واحدة مدفوعة - ${formatNumber(200)} دج - معرف العميل: ${customerId}`,
-        },
-      ])
-      .select()
-      .single();
-
-    if (attendanceError) {
-      console.error("خطأ في إنشاء سجل الحضور:", attendanceError);
-      // Don't throw error here, payment was successful
-      console.warn("تم إنشاء الدفع ولكن فشل في تسجيل الحضور");
-    } else {
-      console.log("تم إنشاء سجل الحضور بنجاح:", attendanceData);
-    }
+    // Note: We don't create a separate attendance record here because
+    // the non_subscribed_customers table already tracks the session
+    // This prevents duplicate counting in statistics
+    console.log(
+      "تم تسجيل الحصة في جدول العملاء غير المشتركين - لا حاجة لسجل حضور منفصل",
+    );
 
     // Import here to avoid circular dependency
     const { addActivity } = await import("./memberService");
@@ -395,16 +376,14 @@ export const addSessionPayment = async (): Promise<{
         details: `دفع حصة واحدة - ${formatNumber(200)} دج - معرف العميل: ${customerId}`,
       });
 
-      // Add check-in activity only if attendance was created successfully
-      if (!attendanceError) {
-        await addActivity({
-          memberId: customerId, // Use customer ID for activities
-          memberName,
-          activityType: "check-in",
-          timestamp: now,
-          details: `تسجيل حضور حصة واحدة - معرف العميل: ${customerId}`,
-        });
-      }
+      // Add a single check-in activity for the session
+      await addActivity({
+        memberId: customerId, // Use customer ID for activities
+        memberName,
+        activityType: "check-in",
+        timestamp: now,
+        details: `حصة واحدة مدفوعة - ${formatNumber(200)} دج`,
+      });
     } catch (activityError) {
       console.error("خطأ في إضافة الأنشطة:", activityError);
       // Don't throw error, payment and attendance were successful
@@ -416,8 +395,7 @@ export const addSessionPayment = async (): Promise<{
       customerId,
       memberName,
       amount: 200,
-      attendanceCreated: !attendanceError,
-      attendanceId: attendanceData?.id,
+      sessionRecorded: true,
     });
 
     return { payment: newPayment, memberId: customerId, customerId };

@@ -13,14 +13,16 @@ export const useRecentActivities = (defaultLimit: number = 10) => {
 
       // Sort activities by timestamp (newest first)
       const sortedActivities = [...recentActivities].sort((a, b) => {
-        return (
-          new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
-        );
+        const timeA = a.timestamp ? new Date(a.timestamp).getTime() : 0;
+        const timeB = b.timestamp ? new Date(b.timestamp).getTime() : 0;
+        return timeB - timeA;
       });
 
       setActivities(sortedActivities);
     } catch (error) {
       console.error("Error fetching recent activities:", error);
+      // Set empty array on error to show "no activities" message
+      setActivities([]);
     } finally {
       setLoading(false);
     }

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
@@ -43,11 +43,148 @@ const defaultMonthlyData: AttendanceData[] = [
 ];
 
 const AttendanceChart = ({
-  dailyData = defaultDailyData,
-  weeklyData = defaultWeeklyData,
-  monthlyData = defaultMonthlyData,
+  dailyData,
+  weeklyData,
+  monthlyData,
 }: AttendanceChartProps) => {
   const [chartType, setChartType] = useState<"bar" | "line" | "pie">("bar");
+  const [realDailyData, setRealDailyData] =
+    useState<AttendanceData[]>(defaultDailyData);
+  const [realWeeklyData, setRealWeeklyData] =
+    useState<AttendanceData[]>(defaultWeeklyData);
+  const [realMonthlyData, setRealMonthlyData] =
+    useState<AttendanceData[]>(defaultMonthlyData);
+  const [isLoading, setIsLoading] = useState(false);
+
+  // Fetch real attendance data
+  useEffect(() => {
+    const fetchAttendanceData = async () => {
+      setIsLoading(true);
+      try {
+        const { supabase, requireAuth } = await import("@/lib/supabase");
+        const userId = await requireAuth();
+        const today = new Date();
+
+        // Get daily data for the last 7 days
+        const dailyPromises = [];
+        const dailyLabels = [
+          "السبت",
+          "الأحد",
+          "الإثنين",
+          "الثلاثاء",
+          "الأربعاء",
+          "الخميس",
+          "الجمعة",
+        ];
+
+        for (let i = 6; i >= 0; i--) {
+          const date = new Date(today);
+          date.setDate(date.getDate() - i);
+          const dateStr = date.toISOString().split("T")[0];
+
+          dailyPromises.push(
+            supabase
+              .from("attendance")
+              .select("id")
+              .eq("user_id", userId)
+              .eq("attendance_date", dateStr)
+              .then(({ data }) => ({
+                day: dailyLabels[date.getDay()],
+                count: data?.length || 0,
+              })),
+          );
+        }
+
+        const dailyResults = await Promise.all(dailyPromises);
+
+        // Get weekly data for the last 4 weeks
+        const weeklyPromises = [];
+        for (let i = 3; i >= 0; i--) {
+          const weekStart = new Date(today);
+          weekStart.setDate(weekStart.getDate() - i * 7 - 7);
+          const weekEnd = new Date(weekStart);
+          weekEnd.setDate(weekEnd.getDate() + 6);
+
+          weeklyPromises.push(
+            supabase
+              .from("attendance")
+              .select("id")
+              .eq("user_id", userId)
+              .gte("attendance_date", weekStart.toISOString().split("T")[0])
+              .lte("attendance_date", weekEnd.toISOString().split("T")[0])
+              .then(({ data }) => ({
+                day: `الأسبوع ${4 - i}`,
+                count: data?.length || 0,
+              })),
+          );
+        }
+
+        const weeklyResults = await Promise.all(weeklyPromises);
+
+        // Get monthly data for the last 6 months
+        const monthlyPromises = [];
+        const monthNames = [
+          "يناير",
+          "فبراير",
+          "مارس",
+          "أبريل",
+          "مايو",
+          "يونيو",
+          "يوليو",
+          "أغسطس",
+          "سبتمبر",
+          "أكتوبر",
+          "نوفمبر",
+          "ديسمبر",
+        ];
+
+        for (let i = 5; i >= 0; i--) {
+          const monthStart = new Date(
+            today.getFullYear(),
+            today.getMonth() - i,
+            1,
+          );
+          const monthEnd = new Date(
+            today.getFullYear(),
+            today.getMonth() - i + 1,
+            0,
+          );
+
+          monthlyPromises.push(
+            supabase
+              .from("attendance")
+              .select("id")
+              .eq("user_id", userId)
+              .gte("attendance_date", monthStart.toISOString().split("T")[0])
+              .lte("attendance_date", monthEnd.toISOString().split("T")[0])
+              .then(({ data }) => ({
+                day: monthNames[monthStart.getMonth()],
+                count: data?.length || 0,
+              })),
+          );
+        }
+
+        const monthlyResults = await Promise.all(monthlyPromises);
+
+        // Update state with real data
+        setRealDailyData(dailyResults);
+        setRealWeeklyData(weeklyResults);
+        setRealMonthlyData(monthlyResults);
+      } catch (error) {
+        console.error("Error fetching attendance data:", error);
+        // Keep default data on error
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchAttendanceData();
+  }, []);
+
+  // Use provided data if available, otherwise use fetched real data
+  const finalDailyData = dailyData || realDailyData;
+  const finalWeeklyData = weeklyData || realWeeklyData;
+  const finalMonthlyData = monthlyData || realMonthlyData;
 
   // Function to get the maximum value for scaling
   const getMaxValue = (data: AttendanceData[]) => {
@@ -282,19 +419,40 @@ const AttendanceChart = ({
             value="daily"
             className="space-y-4 bg-white/10 rounded-xl p-4 border border-white/20"
           >
-            {renderChart(dailyData)}
+            {isLoading ? (
+              <div className="flex justify-center items-center h-[300px]">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
+                <span className="ml-2 text-white">جاري تحميل البيانات...</span>
+              </div>
+            ) : (
+              renderChart(finalDailyData)
+            )}
           </TabsContent>
           <TabsContent
             value="weekly"
             className="space-y-4 bg-white/10 rounded-xl p-4 border border-white/20"
           >
-            {renderChart(weeklyData)}
+            {isLoading ? (
+              <div className="flex justify-center items-center h-[300px]">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
+                <span className="ml-2 text-white">جاري تحميل البيانات...</span>
+              </div>
+            ) : (
+              renderChart(finalWeeklyData)
+            )}
           </TabsContent>
           <TabsContent
             value="monthly"
             className="space-y-4 bg-white/10 rounded-xl p-4 border border-white/20"
           >
-            {renderChart(monthlyData)}
+            {isLoading ? (
+              <div className="flex justify-center items-center h-[300px]">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
+                <span className="ml-2 text-white">جاري تحميل البيانات...</span>
+              </div>
+            ) : (
+              renderChart(finalMonthlyData)
+            )}
           </TabsContent>
         </Tabs>
 

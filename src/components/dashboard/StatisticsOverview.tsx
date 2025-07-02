@@ -22,6 +22,7 @@ import {
   removeAttendance,
   getRecentActivities,
   MemberActivity,
+  getTodayAttendanceBreakdown,
 } from "@/services/memberService";
 import { getAllPayments } from "@/services/paymentService";
 import {
@@ -121,6 +122,11 @@ const StatisticsOverview = () => {
     weeklyAttendance: 0,
     pendingPayments: 0,
   });
+  const [todayAttendanceBreakdown, setTodayAttendanceBreakdown] = useState({
+    regularMembers: 0,
+    nonSubscribedCustomers: 0,
+    total: 0,
+  });
   const [isLoading, setIsLoading] = useState(true);
   const [trends, setTrends] = useState({
     totalMembers: { value: 0, isPositive: true },
@@ -178,46 +184,12 @@ const StatisticsOverview = () => {
         // Calculate today's attendance using new attendance table
         const today = new Date().toISOString().split("T")[0];
 
-        // Import and use the new attendance function
-        const { getTodayAttendance } = await import("@/services/memberService");
-        const todayData = await getTodayAttendance();
+        // Get today's attendance breakdown
+        const todayBreakdown = await getTodayAttendanceBreakdown();
+        const totalTodayAttendance = todayBreakdown.total;
+        setTodayAttendanceBreakdown(todayBreakdown);
 
-        console.log("Today's attendance data:", todayData);
-
-        // Get today's check-in activities for additional context
-        const activities = await getRecentActivities(100);
-        const todayCheckInActivities = activities.filter(
-          (activity) =>
-            activity.activityType === "check-in" &&
-            activity.timestamp &&
-            activity.timestamp.split("T")[0] === today,
-        );
-
-        // Transform the data to match existing structure
-        const todayAttendanceMembers = todayData.regularMembers.map(
-          (item) => item.member,
-        );
-        const todaySessionPayments = todayData.sessionPayments;
-
-        // Update today's attendance data
-        setTodayAttendanceData({
-          regularMembers: todayAttendanceMembers,
-          sessionPayments: todaySessionPayments,
-          nonSubscribedCustomers: todayData.nonSubscribedCustomers,
-          checkInActivities: todayCheckInActivities,
-        });
-
-        // Calculate total attendance including total_sessions from non-subscribed customers
-        const nonSubscribedTotalSessions =
-          todayData.nonSubscribedCustomers.reduce(
-            (sum, customer) => sum + customer.totalSessions,
-            0,
-          );
-
-        const totalTodayAttendance =
-          todayAttendanceMembers.length +
-          todaySessionPayments.length +
-          nonSubscribedTotalSessions;
+        console.log("Today's attendance breakdown:", todayBreakdown);
 
         // Calculate weekly attendance from attendance table
         const oneWeekAgo = new Date();
@@ -482,31 +454,16 @@ const StatisticsOverview = () => {
   const refreshTodayAttendance = useCallback(async () => {
     setAttendanceLoading(true);
     try {
-      // Import the new function
-      const { getTodayAttendance } = await import("@/services/memberService");
-      const todayData = await getTodayAttendance();
+      // Get today's attendance breakdown
+      const todayBreakdown = await getTodayAttendanceBreakdown();
+      const totalTodayAttendance = todayBreakdown.total;
+      setTodayAttendanceBreakdown(todayBreakdown);
 
-      // Get activities for additional context
-      const activities = await getRecentActivities(100);
-      const today = new Date().toISOString().split("T")[0];
-      const todayCheckInActivities = activities.filter(
-        (activity) =>
-          activity.activityType === "check-in" &&
-          activity.timestamp &&
-          activity.timestamp.split("T")[0] === today,
-      );
-
-      // Transform the data to match the existing structure
-      const regularMembers = todayData.regularMembers.map(
-        (item) => item.member,
-      );
-
-      setTodayAttendanceData({
-        regularMembers,
-        sessionPayments: todayData.sessionPayments,
-        nonSubscribedCustomers: todayData.nonSubscribedCustomers,
-        checkInActivities: todayCheckInActivities,
-      });
+      // Update the statistics with the correct count
+      setStatistics((prev) => ({
+        ...prev,
+        todayAttendance: totalTodayAttendance,
+      }));
     } catch (error) {
       console.error("Error refreshing attendance data:", error);
     } finally {
@@ -522,11 +479,7 @@ const StatisticsOverview = () => {
         // Refresh attendance data
         await refreshTodayAttendance();
 
-        // Update statistics
-        setStatistics((prev) => ({
-          ...prev,
-          todayAttendance: prev.todayAttendance - 1,
-        }));
+        // Statistics will be updated by the refreshTodayAttendance function
 
         toast({
           title: "تم إلغاء الحضور",
@@ -593,6 +546,123 @@ const StatisticsOverview = () => {
           />
         </div>
       </div>
+
+      {/* Today's Attendance Breakdown Sheet */}
+      <Sheet
+        open={isTodayAttendeesSheetOpen}
+        onOpenChange={setIsTodayAttendeesSheetOpen}
+      >
+        <SheetContent
+          side="right"
+          className="w-full sm:w-[450px] bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white border-slate-700/50 backdrop-blur-xl"
+        >
+          <SheetHeader className="pb-6 border-b border-slate-700/50">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-gradient-to-r from-purple-500 to-indigo-600 rounded-xl flex items-center justify-center">
+                  <Calendar className="h-5 w-5 text-white" />
+                </div>
+                <SheetTitle className="text-2xl font-black text-white">
+                  حضور اليوم
+                </SheetTitle>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setIsTodayAttendeesSheetOpen(false)}
+                className="text-gray-400 hover:text-white hover:bg-slate-800/50 rounded-xl"
+              >
+                <X className="h-5 w-5" />
+              </Button>
+            </div>
+            <SheetDescription className="text-slate-300 text-base mt-3">
+              تفصيل حضور اليوم للأعضاء المشتركين والعملاء غير المشتركين
+            </SheetDescription>
+          </SheetHeader>
+
+          <div className="mt-6 space-y-6">
+            {/* Total Attendance */}
+            <div className="bg-gradient-to-r from-purple-500/20 to-indigo-500/20 rounded-xl p-6 border border-purple-500/30">
+              <div className="text-center">
+                <div className="text-4xl font-black text-white mb-2">
+                  {todayAttendanceBreakdown.total}
+                </div>
+                <div className="text-lg text-purple-200 font-semibold">
+                  إجمالي الحضور اليوم
+                </div>
+              </div>
+            </div>
+
+            {/* Breakdown */}
+            <div className="space-y-4">
+              {/* Regular Members */}
+              <div className="bg-slate-800/50 rounded-lg p-4 border border-slate-700/50">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 bg-green-500/20 rounded-lg flex items-center justify-center">
+                      <UserCheck className="h-4 w-4 text-green-400" />
+                    </div>
+                    <div>
+                      <div className="text-white font-semibold">
+                        الأعضاء المشتركين
+                      </div>
+                      <div className="text-sm text-slate-400">
+                        الحضور العادي
+                      </div>
+                    </div>
+                  </div>
+                  <div className="text-2xl font-bold text-green-400">
+                    {todayAttendanceBreakdown.regularMembers}
+                  </div>
+                </div>
+              </div>
+
+              {/* Non-Subscribed Customers */}
+              <div className="bg-slate-800/50 rounded-lg p-4 border border-slate-700/50">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 bg-blue-500/20 rounded-lg flex items-center justify-center">
+                      <Users className="h-4 w-4 text-blue-400" />
+                    </div>
+                    <div>
+                      <div className="text-white font-semibold">
+                        العملاء غير المشتركين
+                      </div>
+                      <div className="text-sm text-slate-400">
+                        الحصص المنفردة
+                      </div>
+                    </div>
+                  </div>
+                  <div className="text-2xl font-bold text-blue-400">
+                    {todayAttendanceBreakdown.nonSubscribedCustomers}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Refresh Button */}
+            <div className="pt-4">
+              <Button
+                onClick={refreshTodayAttendance}
+                disabled={attendanceLoading}
+                className="w-full bg-gradient-to-r from-purple-500 to-indigo-600 hover:from-purple-600 hover:to-indigo-700 text-white font-semibold py-3 rounded-xl"
+              >
+                {attendanceLoading ? (
+                  <>
+                    <Clock className="h-4 w-4 mr-2 animate-spin" />
+                    جاري التحديث...
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle className="h-4 w-4 mr-2" />
+                    تحديث البيانات
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
+        </SheetContent>
+      </Sheet>
 
       {/* Unpaid Members Sheet */}
       <Sheet
@@ -711,390 +781,6 @@ const StatisticsOverview = () => {
                 </div>
               ))
             )}
-          </div>
-        </SheetContent>
-      </Sheet>
-
-      {/* Today's Attendees Sheet - Completely Rebuilt */}
-      <Sheet
-        open={isTodayAttendeesSheetOpen}
-        onOpenChange={(open) => {
-          setIsTodayAttendeesSheetOpen(open);
-          if (open) {
-            refreshTodayAttendance();
-          }
-        }}
-      >
-        <SheetContent
-          side="right"
-          className="w-full sm:w-[550px] bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white overflow-y-auto border-slate-700/50 backdrop-blur-xl"
-        >
-          <SheetHeader className="pb-6 border-b border-slate-700/50">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center">
-                  <UserCheck className="h-5 w-5 text-white" />
-                </div>
-                <SheetTitle className="text-2xl font-black text-white">
-                  حضور اليوم
-                </SheetTitle>
-              </div>
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={refreshTodayAttendance}
-                  disabled={attendanceLoading}
-                  className="text-blue-400 hover:text-blue-300 hover:bg-slate-800/50 rounded-xl px-3 py-2"
-                >
-                  {attendanceLoading ? (
-                    <div className="animate-spin h-4 w-4 border-2 border-blue-400 border-t-transparent rounded-full" />
-                  ) : (
-                    "تحديث"
-                  )}
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setIsTodayAttendeesSheetOpen(false)}
-                  className="text-gray-400 hover:text-white hover:bg-slate-800/50 rounded-xl"
-                >
-                  <X className="h-5 w-5" />
-                </Button>
-              </div>
-            </div>
-            <SheetDescription className="text-slate-300 flex items-center gap-3 mt-3 text-base">
-              <div className="flex items-center gap-2 bg-slate-800/50 px-3 py-2 rounded-xl">
-                <Calendar className="h-4 w-4 text-blue-400" />
-                <span className="font-medium">
-                  {formatDate(new Date().toISOString())}
-                </span>
-              </div>
-              <div className="flex items-center gap-2 bg-gradient-to-r from-green-500/20 to-blue-500/20 px-3 py-2 rounded-xl">
-                <span className="font-bold text-white">
-                  إجمالي الحضور:{" "}
-                  {todayAttendanceData.regularMembers.length +
-                    todayAttendanceData.sessionPayments.length +
-                    todayAttendanceData.nonSubscribedCustomers.reduce(
-                      (sum, customer) => sum + customer.totalSessions,
-                      0,
-                    )}
-                </span>
-              </div>
-            </SheetDescription>
-          </SheetHeader>
-
-          <div className="mt-6 space-y-6">
-            {/* Regular Members Section */}
-            {todayAttendanceData.regularMembers.length > 0 && (
-              <div>
-                <div className="flex items-center space-x-2 space-x-reverse mb-4">
-                  <CheckCircle className="h-5 w-5 text-green-400" />
-                  <h3 className="text-lg font-semibold text-white">
-                    الأعضاء المسجلين (
-                    {todayAttendanceData.regularMembers.length})
-                  </h3>
-                </div>
-                <div className="space-y-3">
-                  {todayAttendanceData.regularMembers.map((member) => {
-                    // Find corresponding check-in activity
-                    const checkInActivity =
-                      todayAttendanceData.checkInActivities.find(
-                        (activity) => activity.memberId === member.id,
-                      );
-
-                    return (
-                      <div
-                        key={member.id}
-                        className="bg-gray-800 rounded-lg p-4 border border-gray-700 hover:border-gray-600 transition-colors"
-                      >
-                        <div className="flex items-start space-x-3 space-x-reverse">
-                          <Avatar className="h-12 w-12">
-                            <AvatarImage
-                              src={member.imageUrl}
-                              alt={member.name}
-                            />
-                            <AvatarFallback className="bg-gradient-to-br from-blue-500 to-purple-600 text-white font-semibold">
-                              {member.name
-                                .split(" ")
-                                .map((n) => n[0])
-                                .join("")
-                                .slice(0, 2)}
-                            </AvatarFallback>
-                          </Avatar>
-
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center justify-between mb-2">
-                              <h4 className="text-base font-medium text-white truncate">
-                                {member.name}
-                              </h4>
-                              <Badge
-                                variant="default"
-                                className="bg-green-600 hover:bg-green-700 text-xs"
-                              >
-                                عضو مسجل
-                              </Badge>
-                            </div>
-
-                            <div className="space-y-2 text-sm">
-                              {member.phoneNumber && (
-                                <div className="flex items-center space-x-2 space-x-reverse text-gray-300">
-                                  <Phone className="h-3 w-3" />
-                                  <span>{member.phoneNumber}</span>
-                                </div>
-                              )}
-
-                              <div className="flex items-center space-x-2 space-x-reverse text-gray-300">
-                                <Clock className="h-3 w-3" />
-                                <span>
-                                  وقت الحضور:{" "}
-                                  {checkInActivity
-                                    ? new Date(
-                                        checkInActivity.timestamp,
-                                      ).toLocaleTimeString("ar-SA", {
-                                        hour: "2-digit",
-                                        minute: "2-digit",
-                                        hour12: true,
-                                      })
-                                    : formatDate(member.lastAttendance)}
-                                </span>
-                              </div>
-
-                              {member.sessionsRemaining !== undefined && (
-                                <div className="flex items-center space-x-2 space-x-reverse">
-                                  <div className="text-blue-400 font-medium">
-                                    الحصص المتبقية:{" "}
-                                    {formatNumber(member.sessionsRemaining)}
-                                  </div>
-                                  {member.subscriptionType && (
-                                    <Badge
-                                      variant="outline"
-                                      className="text-xs border-blue-400 text-blue-400"
-                                    >
-                                      {member.subscriptionType}
-                                    </Badge>
-                                  )}
-                                </div>
-                              )}
-
-                              {checkInActivity && (
-                                <div className="text-xs text-gray-400 bg-gray-700 rounded px-2 py-1">
-                                  {checkInActivity.details}
-                                </div>
-                              )}
-                            </div>
-
-                            <div className="mt-3 flex gap-2">
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => handleRemoveAttendance(member)}
-                                disabled={isUpdatingAttendance === member.id}
-                                className="text-red-400 border-red-400 hover:bg-red-400 hover:text-white flex-1"
-                              >
-                                {isUpdatingAttendance === member.id ? (
-                                  <div className="flex items-center space-x-2 space-x-reverse">
-                                    <div className="animate-spin h-3 w-3 border-2 border-red-400 border-t-transparent rounded-full" />
-                                    <span>جاري الإلغاء...</span>
-                                  </div>
-                                ) : (
-                                  <>
-                                    <Undo2 className="h-3 w-3 ml-1" />
-                                    إلغاء الحضور
-                                  </>
-                                )}
-                              </Button>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
-            {/* Session Payments Section */}
-            {todayAttendanceData.sessionPayments.length > 0 && (
-              <div>
-                {todayAttendanceData.regularMembers.length > 0 && (
-                  <Separator className="bg-gray-700 my-6" />
-                )}
-                <div className="flex items-center space-x-2 space-x-reverse mb-4">
-                  <CreditCard className="h-5 w-5 text-yellow-400" />
-                  <h3 className="text-lg font-semibold text-white">
-                    الحصص المدفوعة منفرداً (
-                    {todayAttendanceData.sessionPayments.length})
-                  </h3>
-                </div>
-                <div className="space-y-3">
-                  {todayAttendanceData.sessionPayments.map((session, index) => (
-                    <div
-                      key={session.id}
-                      className="bg-gray-800 rounded-lg p-4 border border-yellow-600/30 hover:border-yellow-600/50 transition-colors"
-                    >
-                      <div className="flex items-start space-x-3 space-x-reverse">
-                        <Avatar className="h-12 w-12">
-                          <AvatarFallback className="bg-gradient-to-br from-yellow-500 to-orange-600 text-white font-semibold">
-                            {session.name
-                              .split(" ")
-                              .map((n) => n[0])
-                              .join("")
-                              .slice(0, 2)}
-                          </AvatarFallback>
-                        </Avatar>
-
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center justify-between mb-2">
-                            <h4 className="text-base font-medium text-white truncate">
-                              {session.name}
-                            </h4>
-                            <Badge
-                              variant="secondary"
-                              className="bg-yellow-600 hover:bg-yellow-700 text-white text-xs"
-                            >
-                              حصة واحدة
-                            </Badge>
-                          </div>
-
-                          <div className="space-y-2 text-sm">
-                            {session.phoneNumber && (
-                              <div className="flex items-center space-x-2 space-x-reverse text-gray-300">
-                                <Phone className="h-3 w-3" />
-                                <span>{session.phoneNumber}</span>
-                              </div>
-                            )}
-
-                            <div className="flex items-center space-x-2 space-x-reverse text-gray-300">
-                              <Clock className="h-3 w-3" />
-                              <span>
-                                وقت الدفع:{" "}
-                                {new Date(session.time).toLocaleTimeString(
-                                  "ar-SA",
-                                  {
-                                    hour: "2-digit",
-                                    minute: "2-digit",
-                                    hour12: true,
-                                  },
-                                )}
-                              </span>
-                            </div>
-
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center space-x-2 space-x-reverse text-green-400 font-medium">
-                                <CreditCard className="h-3 w-3" />
-                                <span>{formatNumber(session.amount)} ريال</span>
-                              </div>
-                              <Badge
-                                variant="outline"
-                                className="text-xs border-green-400 text-green-400"
-                              >
-                                {session.paymentMethod}
-                              </Badge>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Non-Subscribed Customers Section */}
-            {todayAttendanceData.nonSubscribedCustomers.length > 0 && (
-              <div>
-                {(todayAttendanceData.regularMembers.length > 0 ||
-                  todayAttendanceData.sessionPayments.length > 0) && (
-                  <Separator className="bg-gray-700 my-6" />
-                )}
-                <div className="flex items-center space-x-2 space-x-reverse mb-4">
-                  <Users className="h-5 w-5 text-purple-400" />
-                  <h3 className="text-lg font-semibold text-white">
-                    الزبائن غير المشتركين (
-                    {todayAttendanceData.nonSubscribedCustomers.length})
-                  </h3>
-                </div>
-                <div className="space-y-3">
-                  {todayAttendanceData.nonSubscribedCustomers.map(
-                    (customer) => (
-                      <div
-                        key={customer.id}
-                        className="bg-gray-800 rounded-lg p-4 border border-purple-600/30 hover:border-purple-600/50 transition-colors"
-                      >
-                        <div className="flex items-start space-x-3 space-x-reverse">
-                          <Avatar className="h-12 w-12">
-                            <AvatarFallback className="bg-gradient-to-br from-purple-500 to-pink-600 text-white font-semibold">
-                              {customer.name
-                                .split(" ")
-                                .map((n) => n[0])
-                                .join("")
-                                .slice(0, 2)}
-                            </AvatarFallback>
-                          </Avatar>
-
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center justify-between mb-2">
-                              <h4 className="text-base font-medium text-white truncate">
-                                {customer.name}
-                              </h4>
-                              <Badge
-                                variant="secondary"
-                                className="bg-purple-600 hover:bg-purple-700 text-white text-xs"
-                              >
-                                غير مشترك
-                              </Badge>
-                            </div>
-
-                            <div className="space-y-2 text-sm">
-                              {customer.phoneNumber && (
-                                <div className="flex items-center space-x-2 space-x-reverse text-gray-300">
-                                  <Phone className="h-3 w-3" />
-                                  <span>{customer.phoneNumber}</span>
-                                </div>
-                              )}
-
-                              <div className="flex items-center space-x-2 space-x-reverse text-gray-300">
-                                <Calendar className="h-3 w-3" />
-                                <span>
-                                  آخر زيارة:{" "}
-                                  {formatDate(customer.lastVisitDate)}
-                                </span>
-                              </div>
-
-                              <div className="flex items-center space-x-2 space-x-reverse text-purple-400 font-medium">
-                                <TrendingUp className="h-3 w-3" />
-                                <span>
-                                  إجمالي الحصص:{" "}
-                                  {formatNumber(customer.totalSessions)}
-                                </span>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    ),
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* Empty State */}
-            {todayAttendanceData.regularMembers.length === 0 &&
-              todayAttendanceData.sessionPayments.length === 0 &&
-              todayAttendanceData.nonSubscribedCustomers.length === 0 && (
-                <div className="text-center py-12">
-                  <div className="bg-gray-800 rounded-full p-6 w-24 h-24 mx-auto mb-4 flex items-center justify-center">
-                    <Calendar className="h-12 w-12 text-gray-400" />
-                  </div>
-                  <h3 className="text-lg font-medium text-white mb-2">
-                    لا يوجد حضور اليوم
-                  </h3>
-                  <p className="text-gray-400 text-sm">
-                    لم يتم تسجيل أي حضور أو دفع حصص منفردة اليوم
-                  </p>
-                </div>
-              )}
           </div>
         </SheetContent>
       </Sheet>

@@ -804,141 +804,94 @@ export const getMemberActiveSessions = async (
   }
 };
 
-// Get today's attendance records
-export const getTodayAttendance = async (): Promise<{
-  regularMembers: Array<{
-    member: Member;
-    attendance: {
-      id: string;
-      attendance_time: string;
-      session_type: string;
-      notes?: string;
-    };
-  }>;
-  sessionPayments: Array<{
-    id: string;
-    name: string;
-    phoneNumber?: string;
-    amount: number;
-    time: string;
-    paymentMethod?: string;
-  }>;
-  nonSubscribedCustomers: Array<{
-    id: string;
-    name: string;
-    phoneNumber?: string;
-    totalSessions: number;
-    lastVisitDate: string;
-  }>;
+// Get today's attendance count - simple like weekly attendance
+export const getTodayAttendanceCount = async (): Promise<number> => {
+  try {
+    const userId = await requireAuth();
+    const today = new Date().toISOString().split("T")[0];
+
+    // Get today's attendance records from attendance table
+    const { data: attendanceData, error: attendanceError } = await supabase
+      .from("attendance")
+      .select("id")
+      .eq("user_id", userId)
+      .eq("attendance_date", today);
+
+    if (attendanceError) {
+      console.error("Error fetching attendance:", attendanceError);
+      throw attendanceError;
+    }
+
+    return attendanceData ? attendanceData.length : 0;
+  } catch (error) {
+    console.error("Error fetching today's attendance:", error);
+    return 0;
+  }
+};
+
+// Get today's attendance breakdown
+export const getTodayAttendanceBreakdown = async (): Promise<{
+  regularMembers: number;
+  nonSubscribedCustomers: number;
+  total: number;
 }> => {
   try {
     const userId = await requireAuth();
     const today = new Date().toISOString().split("T")[0];
 
-    // Get today's attendance records
-    const { data: attendanceData, error: attendanceError } = await supabase
+    // Get today's regular attendance from attendance table
+    const { data: regularAttendanceData, error: regularError } = await supabase
       .from("attendance")
-      .select("*")
+      .select("id")
       .eq("user_id", userId)
       .eq("attendance_date", today)
-      .order("attendance_time", { ascending: false });
+      .eq("session_type", "regular");
 
-    if (attendanceError) throw attendanceError;
+    if (regularError) {
+      console.error("Error fetching regular attendance:", regularError);
+      throw regularError;
+    }
 
-    // Get all members to match with attendance
-    const members = await getAllMembers();
-    const memberMap = new Map(members.map((m) => [m.id, m]));
+    const regularCount = regularAttendanceData
+      ? regularAttendanceData.length
+      : 0;
 
-    // Process regular member attendance
-    const regularMembers = (attendanceData || [])
-      .filter((att) => att.session_type === "regular")
-      .map((att) => {
-        const member = memberMap.get(att.member_id);
-        if (!member) return null;
-        return {
-          member,
-          attendance: {
-            id: att.id,
-            attendance_time: att.attendance_time,
-            session_type: att.session_type,
-            notes: att.notes,
-          },
-        };
-      })
-      .filter(Boolean) as Array<{
-      member: Member;
-      attendance: {
-        id: string;
-        attendance_time: string;
-        session_type: string;
-        notes?: string;
-      };
-    }>;
-
-    // Get today's single session payments from payments table
-    const { getAllPayments } = await import("./paymentService");
-    const payments = await getAllPayments();
-    const todaySessionPayments = payments
-      .filter(
-        (payment) =>
-          payment.subscriptionType === "حصة واحدة" &&
-          payment.date &&
-          payment.date.split("T")[0] === today,
-      )
-      .map((payment, index) => ({
-        id: payment.id || `session-${index}`,
-        name:
-          payment.notes?.split(" - ")[1]?.split(" (")[0] || `زائر ${index + 1}`,
-        phoneNumber: payment.notes?.match(/\(([^)]+)\)/)?.[1] || "",
-        amount: payment.amount,
-        time: payment.date,
-        paymentMethod: payment.paymentMethod || "نقدي",
-      }));
-
-    // Get today's non-subscribed customers (only those who visited today)
+    // Get today's non-subscribed customers attendance
     const { data: nonSubscribedData, error: nonSubscribedError } =
       await supabase
         .from("non_subscribed_customers")
-        .select("*")
+        .select("total_sessions")
         .eq("user_id", userId)
-        .eq("last_visit_date", today)
-        .order("updated_at", { ascending: false });
+        .eq("last_visit_date", today);
 
     if (nonSubscribedError) {
       console.error(
-        "Error fetching non-subscribed customers:",
+        "Error fetching non-subscribed attendance:",
         nonSubscribedError,
       );
+      throw nonSubscribedError;
     }
 
-    // Group non-subscribed customers by name and phone to avoid duplicates
-    const uniqueCustomersMap = new Map();
-    (nonSubscribedData || []).forEach((customer) => {
-      const key = `${customer.customer_name}-${customer.phone_number || "no-phone"}`;
-      if (!uniqueCustomersMap.has(key)) {
-        uniqueCustomersMap.set(key, {
-          id: customer.id,
-          name: customer.customer_name,
-          phoneNumber: customer.phone_number,
-          totalSessions: customer.total_sessions || 1, // Use actual total_sessions from database
-          lastVisitDate: customer.last_visit_date,
-        });
-      }
-    });
+    const nonSubscribedCount = nonSubscribedData
+      ? nonSubscribedData.reduce(
+          (sum, customer) => sum + (customer.total_sessions || 0),
+          0,
+        )
+      : 0;
 
-    const nonSubscribedCustomers = Array.from(uniqueCustomersMap.values());
+    const total = regularCount + nonSubscribedCount;
 
     return {
-      regularMembers,
-      sessionPayments: todaySessionPayments,
-      nonSubscribedCustomers,
+      regularMembers: regularCount,
+      nonSubscribedCustomers: nonSubscribedCount,
+      total,
     };
   } catch (error) {
-    console.error("Error fetching today's attendance:", error);
+    console.error("Error fetching today's attendance breakdown:", error);
     return {
-      regularMembers: [],
-      sessionPayments: [],
-      nonSubscribedCustomers: [],
+      regularMembers: 0,
+      nonSubscribedCustomers: 0,
+      total: 0,
     };
   }
 };

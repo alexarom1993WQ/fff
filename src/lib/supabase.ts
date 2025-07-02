@@ -20,9 +20,24 @@ export const getCurrentUserId = async (): Promise<string | null> => {
 
 // Helper function to ensure user is authenticated
 export const requireAuth = async (): Promise<string> => {
+  // First try to get from Supabase auth
   const userId = await getCurrentUserId();
-  if (!userId) {
-    throw new Error("User not authenticated");
+  if (userId) {
+    return userId;
   }
-  return userId;
+
+  // Fallback: try to get from localStorage (for Google OAuth)
+  const user = localStorage.getItem("user");
+  if (user) {
+    try {
+      const parsedUser = JSON.parse(user);
+      if (parsedUser.sub || parsedUser.id) {
+        return parsedUser.sub || parsedUser.id;
+      }
+    } catch (error) {
+      console.error("Error parsing user from localStorage:", error);
+    }
+  }
+
+  throw new Error("User not authenticated");
 };
