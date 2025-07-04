@@ -1,1 +1,36 @@
-https://myaccount.google.com/personal-info?gar=WzJd&hl=fr&utm_source=OGB&utm_medium=act
+
+bash
+Copier
+Modifier
+cd ~/Downloads
+tar -xvzf android-studio-2025.1.1.13-linux.tar.gz
+سيتولد مجلد اسمه android-studio.
+
+🔃 ثانيًا: إعداد متغيرات البيئة (بشكل صحيح)
+في Ubuntu، نضيف إلى .bashrc:
+
+bash
+Copier
+Modifier
+nano ~/.bashrc
+ثم أضف في نهاية الملف:
+
+bash
+Copier
+Modifier
+export ANDROID_HOME=$HOME/Android/Sdk
+export PATH=$PATH:$ANDROID_HOME/emulator
+export PATH=$PATH:$ANDROID_HOME/platform-tools
+احفظ (اضغط Ctrl+O ثم Enter، ثم Ctrl+X)
+ثم فعّل التغييرات:
+
+bash
+Copier
+Modifier
+source ~/.bashrc
+▶️ ثالثًا: تشغيل Android Studio
+bash
+Copier
+Modifier
+cd ~/Downloads/android-studio/bin
+./studio.sh
