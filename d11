@@ -1,1 +1,15 @@
-https://chatgpt.com/share/6867332e-5e0c-8006-8a9b-99f50fe4efec
+sudo kill -9 11622
+
+
+sudo rm /var/lib/dpkg/lock-frontend
+sudo rm /var/lib/dpkg/lock
+sudo rm /var/cache/apt/archives/lock
+sudo dpkg --configure -a
+
+
+
+cd ~
+wget https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
+
+
+sudo apt install ./google-chrome-stable_current_amd64.deb
