@@ -1,32 +1,5 @@
-sudo kill -9 11622
+sudo dpkg -i google-chrome-stable_current_amd64.deb
 
+sudo apt -f install
 
-sudo rm /var/lib/dpkg/lock-frontend
-sudo rm /var/lib/dpkg/lock
-sudo rm /var/cache/apt/archives/lock
-sudo dpkg --configure -a
-
-
-
-cd ~
-wget https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
-
-
-sudo apt install ./google-chrome-stable_current_amd64.deb
-
-
-
-# 1. Supprimer l'ancien fichier .deb (s'il existe)
-rm ~/google-chrome-stable_current_amd64.deb
-
-# 2. Télécharger Google Chrome
-wget https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
-
-# 3. Installer Google Chrome avec les permissions root
-sudo apt install ./google-chrome-stable_current_amd64.deb
-
-
-
-# Remplacer 11622 par le numéro de processus affiché dans ton erreur
-sudo kill -9 11622
-
+google-chrome
